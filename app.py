@@ -106,7 +106,7 @@ if st.session_state.stage == "need_problem":
         assistant = llm_chat(st.session_state.chatlog, max_new_tokens=256)
         st.session_state.chatlog.append({"role": "assistant", "content": assistant})
         st.session_state.stage = "need_clarify"
-        st.experimental_rerun()
+        st.rerun()
 
 # -------- Stage 2 : display 5W1H questions, collect answers ------------
 elif st.session_state.stage == "need_clarify":
@@ -126,7 +126,7 @@ elif st.session_state.stage == "need_clarify":
         assistant = llm_chat(st.session_state.chatlog, max_new_tokens=512)
         st.session_state.chatlog.append({"role": "assistant", "content": assistant})
         st.session_state.stage = "done"
-        st.experimental_rerun()
+        st.rerun()
 
 # -------- Stage 3 : show diagnosis -------------------------------------
 elif st.session_state.stage == "done":
@@ -135,7 +135,7 @@ elif st.session_state.stage == "done":
     if st.button("Start new analysis"):
         for k in ("stage", "chatlog"):
             st.session_state.pop(k, None)
-        st.experimental_rerun()
+        st.rerun()
 
 # -------- Optional: expandable debug log -------------------------------
 with st.expander("🔎 Debug conversation log"):
