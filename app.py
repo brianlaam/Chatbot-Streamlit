@@ -184,6 +184,6 @@ elif st.session_state.stage == "done":
         st.rerun()
 
 # -------- Optional: expandable debug log -------------------------------
-with st.expander("🔎 Debug conversation log"):
-    for m in st.session_state.chatlog:
-        st.write(f"**{m['role'].upper()}**: {m['content']}")
+# with st.expander("🔎 Debug conversation log"):
+#     for m in st.session_state.chatlog:
+#         st.write(f"**{m['role'].upper()}**: {m['content']}")
