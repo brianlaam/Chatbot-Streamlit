@@ -7,7 +7,7 @@ import streamlit as st
 # -------------------------------------------------------------------
 # 1. Hugging Face Inference-API helper
 # -------------------------------------------------------------------
-HF_API_URL = "https://huggingface.co/api/models/mistralai/Mistral-7B-Instruct-v0.2"
+HF_API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
 # HF_TOKEN   = os.getenv("HF_TOKEN")          # must be set in Streamlit Secrets
 HF_TOKEN = st.secrets["HUGGINGFACE_API_TOKEN"]
 os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
