@@ -6,6 +6,9 @@ HF_API_URL = ("https://api-inference.huggingface.co/models/mistralai/Mistral-7B-
 HF_TOKEN = os.getenv("HF_TOKEN")                            # via secrets
 HEADERS  = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
 
+st.write("DEBUG-token-chars:", len(HF_TOKEN) if HF_TOKEN else "None")
+HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
+
 # Tune these so we stay within the public queue limits
 MAX_NEW_TOKENS_1 = 128     # for the 5W1H question turn
 MAX_NEW_TOKENS_2 = 256     # for the final answer
