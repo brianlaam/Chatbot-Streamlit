@@ -183,65 +183,6 @@ elif st.session_state.stage == "done":
             st.session_state.pop(k, None)
         st.rerun()
 
-# -------- Session state -------------------------------------------------
-if "stage" not in st.session_state:
-    st.session_state.stage    = "need_problem"    # → need_clarify → done
-    st.session_state.chatlog  = [
-        {"role": "system",
-         "content":
-         "You are an internal support assistant for our company. "
-         "Follow subsequent instructions carefully."}
-    ]
-
-# -------- Stage 1 : get initial problem --------------------------------
-if st.session_state.stage == "need_problem":
-    problem = st.text_area(
-        "Describe the customer's problem:",
-        placeholder="e.g. Mobile app crashes when user tries to upload a file…"
-    )
-    if st.button("Submit problem", disabled=not problem.strip()):
-        st.session_state.chatlog.append({"role": "user", "content": problem.strip()})
-        # Tell the model what we want next:
-        st.session_state.chatlog.append({
-            "role": "system",
-            "content":
-            "Ask the user 4-8 concise clarifying questions using the 5W1H method "
-            "(Who, What, When, Where, Why, How). Number the questions."
-        })
-        assistant = llm_chat(st.session_state.chatlog, max_new_tokens=256)
-        st.session_state.chatlog.append({"role": "assistant", "content": assistant})
-        st.session_state.stage = "need_clarify"
-        st.rerun()
-
-# -------- Stage 2 : display 5W1H questions, collect answers ------------
-elif st.session_state.stage == "need_clarify":
-    st.subheader("Assistant questions")
-    st.markdown(st.session_state.chatlog[-1]["content"])
-    answers = st.text_area("Your answers:")
-    if st.button("Submit answers", disabled=not answers.strip()):
-        st.session_state.chatlog.append({"role": "user", "content": answers.strip()})
-        st.session_state.chatlog.append({
-            "role": "system",
-            "content":
-            "Analyse the conversation so far.\n"
-            "1. List the most plausible root causes of the user's problem (bulleted).\n"
-            "2. For each cause, suggest practical solutions or next steps.\n"
-            "3. Keep the tone professional and concise."
-        })
-        assistant = llm_chat(st.session_state.chatlog, max_new_tokens=512)
-        st.session_state.chatlog.append({"role": "assistant", "content": assistant})
-        st.session_state.stage = "done"
-        st.rerun()
-
-# -------- Stage 3 : show diagnosis -------------------------------------
-elif st.session_state.stage == "done":
-    st.success("Possible causes and solutions")
-    st.markdown(st.session_state.chatlog[-1]["content"])
-    if st.button("Start new analysis"):
-        for k in ("stage", "chatlog"):
-            st.session_state.pop(k, None)
-        st.rerun()
-
 # -------- Optional: expandable debug log -------------------------------
 with st.expander("🔎 Debug conversation log"):
     for m in st.session_state.chatlog:
