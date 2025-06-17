@@ -1,158 +1,97 @@
-import os, time, requests, streamlit as st
+import streamlit as st
+from transformers import pipeline
+from huggingface_hub import InferenceClient
 
-# ────────────────────────────── 1. CONFIG ─────────────────────────────
-HF_API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
-#HF_TOKEN = st.secrets["HF_TOKEN"] 
-HF_TOKEN = st.secrets["HUGGINGFACE_TOKEN"]["token"]
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
-HEADERS  = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
+# Access HuggingFace API token from Streamlit secrets
+hf_token = st.secrets["HUGGINGFACE_API_TOKEN"]
 
-# Tune these so we stay within the public queue limits
-MAX_NEW_TOKENS_1 = 128     # for the 5W1H question turn
-MAX_NEW_TOKENS_2 = 256     # for the final answer
+# Initialize HuggingFace Inference Client
+client = InferenceClient(token=hf_token)
 
+# Streamlit app layout
+st.title("Customer Problem Solver Chatbot")
+st.write("Describe the problem faced by your customer, and I'll help identify reasons and solutions.")
 
-# ────────────────────────────── 2.  LOW-LEVEL CALL ────────────────────
-def call_hf(prompt: str, max_new: int, temperature: float = 0.7) -> str:
+# Initialize session state to store conversation
+if "step" not in st.session_state:
+    st.session_state.step = 1
+    st.session_state.problem = ""
+    st.session_state.questions = []
+    st.session_state.answers = []
+
+# Step 1: User inputs the customer problem
+if st.session_state.step == 1:
+    with st.form("problem_form"):
+        problem = st.text_area("Enter the customer's problem:", height=100)
+        submitted = st.form_submit_button("Submit Problem")
+        if submitted and problem:
+            st.session_state.problem = problem
+
+            # Generate 5W1H questions using LLM
+            prompt = f"""
+            A customer reported the following problem: "{problem}"
+            Generate 5W1H (Who, What, When, Where, Why, How) questions to gather more details about this problem. Provide the questions as a bulleted list.
+            """
+            try:
+                response = client.text_generation(
+                    prompt,
+                    model="facebook/blenderbot-400M-distill",
+                    max_length=200,
+                    temperature=0.7
+                )
+                questions = response.strip().split("\n")
+                st.session_state.questions = [q for q in questions if q.startswith("- ")]
+                st.session_state.step = 2
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error generating questions: {e}")
+
+# Step 2: Display questions and collect answers
+if st.session_state.step == 2:
+    st.write("Please answer the following questions to provide more details:")
+    with st.form("answers_form"):
+        answers = []
+        for i, question in enumerate(st.session_state.questions):
+            answer = st.text_input(f"{question}", key=f"q{i}")
+            answers.append(answer)
+        submitted = st.form_submit_button("Submit Answers")
+        if submitted and all(answers):
+            st.session_state.answers = answers
+            st.session_state.step = 3
+            st.rerun()
+
+# Step 3: Generate reasons and solutions
+if st.session_state.step == 3:
+    st.write("### Analysis of the Problem")
+    st.write(f"**Customer Problem**: {st.session_state.problem}")
+    st.write("**Provided Details**:")
+    for q, a in zip(st.session_state.questions, st.session_state.answers):
+        st.write(f"{q}: {a}")
+
+    # Generate reasons and solutions using LLM
+    details = "\n".join([f"{q}: {a}" for q, a in zip(st.session_state.questions, st.session_state.answers)])
+    prompt = f"""
+    A customer reported the following problem: "{st.session_state.problem}"
+    Additional details provided:
+    {details}
+
+    Analyze the problem and provide:
+    - A bulleted list of possible reasons for the problem.
+    - A bulleted list of suggested solutions to address the problem.
     """
-    Send a prompt to the HuggingFace inference-endpoint and
-    return ONLY the newly-generated text.  Raises a RuntimeError with
-    a clean explanation if the endpoint responds with an error.
-    """
-    payload = {
-        "inputs": prompt,
-        "parameters": {
-            "max_new_tokens":   max_new,
-            "temperature":      temperature,
-            "top_p":            0.95,
-            "do_sample":        True,
-            "repetition_penalty": 1.1,
-        },
-        # Ask the HF queue to wait (up to 2 min) until a GPU is free
-        "options": {"wait_for_model": True}
-    }
-
     try:
-        r = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=180)
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Network error while contacting HF API: {e}")
+        response = client.text_generation(
+            prompt,
+            model="facebook/blenderbot-400M-distill",
+            max_length=400,
+            temperature=0.7
+        )
+        st.write("### Possible Reasons and Suggested Solutions")
+        st.markdown(response.strip())
+    except Exception as e:
+        st.error(f"Error generating reasons: {e}")
 
-    #  ----- handle non-200 codes ourselves so we can show useful info
-    if r.status_code != 200:
-        try:
-            detail = r.json().get("error", r.text)
-        except ValueError:
-            detail = r.text
-        raise RuntimeError(f"HF API returned {r.status_code}: {detail}")
-
-    data = r.json()
-
-    # HF sometimes returns {"error": "..."} with 200 – catch that too
-    if isinstance(data, dict) and "error" in data:
-        raise RuntimeError(f"HF API error: {data['error']}")
-
-    full_text = data[0]["generated_text"]
-    return full_text[len(prompt):].lstrip()
-
-
-# ────────────────────────────── 3.  PROMPT UTILS ──────────────────────
-def build_prompt(messages: list[dict]) -> str:
-    """
-    Convert the chat list into Mistral <s>[INST] ... [/INST] format.
-    """
-    txt = ""
-    for m in messages:
-        role, content = m["role"], m["content"].strip()
-        if role in ("system", "user"):
-            txt += f"<s>[INST] {content} [/INST]"
-        else:                       # assistant
-            txt += f" {content} "
-    return txt + " "
-
-def llm_complete(msgs, max_new):
-    prompt = build_prompt(msgs)
-    return call_hf(prompt, max_new=max_new)
-
-
-# ────────────────────────────── 4.  STREAMLIT UI ──────────────────────
-st.set_page_config(page_title="Customer-Problem Assistant", page_icon="💬")
-st.title("💬  Internal AI Troubleshooting Assistant")
-
-if not HF_TOKEN:
-    st.error("HF_TOKEN is not set – add it under Settings → Secrets.")
-    st.stop()
-
-if "stage" not in st.session_state:
-    st.session_state.stage   = "need_problem"  # -> need_clarify -> done
-    st.session_state.chatlog = [
-        {"role": "system",
-         "content": "You are an internal support assistant. "
-                    "Follow instructions carefully."}
-    ]
-
-# ───────── Stage 1: user describes the problem ────────────────────────
-if st.session_state.stage == "need_problem":
-    problem = st.text_area(
-        "Describe the customer's problem:",
-        placeholder="e.g. Mobile app crashes when user tries to upload …"
-    )
-    if st.button("Submit problem", disabled=not problem.strip()):
-        st.session_state.chatlog.append({"role": "user", "content": problem.strip()})
-        st.session_state.chatlog.append({
-            "role": "system",
-            "content": (
-                "Ask the user 4-8 concise clarifying questions using the 5W1H "
-                "method (Who, What, When, Where, Why, How). Number the questions."
-            )
-        })
-        with st.spinner("Generating clarifying questions…"):
-            try:
-                reply = llm_complete(st.session_state.chatlog,
-                                     max_new=MAX_NEW_TOKENS_1)
-            except RuntimeError as e:
-                st.error(str(e))
-                st.stop()
-        st.session_state.chatlog.append({"role": "assistant", "content": reply})
-        st.session_state.stage = "need_clarify"
-        st.experimental_rerun()
-
-# ───────── Stage 2: user answers, model diagnoses ──────────────────────
-elif st.session_state.stage == "need_clarify":
-    st.subheader("Assistant questions")
-    st.markdown(st.session_state.chatlog[-1]["content"])
-    answers = st.text_area("Your answers:")
-    if st.button("Submit answers", disabled=not answers.strip()):
-        st.session_state.chatlog.append({"role": "user", "content": answers.strip()})
-        st.session_state.chatlog.append({
-            "role": "system",
-            "content": (
-                "Analyse the conversation so far.\n"
-                "1. Bullet the most plausible root causes.\n"
-                "2. For each cause, propose practical solutions.\n"
-                "3. Keep tone professional and concise."
-            )
-        })
-        with st.spinner("Thinking…"):
-            try:
-                reply = llm_complete(st.session_state.chatlog,
-                                     max_new=MAX_NEW_TOKENS_2)
-            except RuntimeError as e:
-                st.error(str(e))
-                st.stop()
-        st.session_state.chatlog.append({"role": "assistant", "content": reply})
-        st.session_state.stage = "done"
-        st.experimental_rerun()
-
-# ───────── Stage 3: show final suggestions ─────────────────────────────
-elif st.session_state.stage == "done":
-    st.success("Possible causes and solutions")
-    st.markdown(st.session_state.chatlog[-1]["content"])
-    if st.button("Start new analysis"):
-        for key in ("stage", "chatlog"):
-            st.session_state.pop(key, None)
-        st.experimental_rerun()
-
-# ───────── Optional debug view ─────────────────────────────────────────
-with st.expander("🔎 Debug conversation log"):
-    for m in st.session_state.chatlog:
-        st.write(f"**{m['role'].upper()}**: {m['content']}")
+    if st.button("Start Over"):
+        st.session_state.step = 1
+        st.session_state.clear()
+        st.rerun()
