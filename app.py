@@ -2,7 +2,9 @@ import os, time, requests, streamlit as st
 
 # ────────────────────────────── 1. CONFIG ─────────────────────────────
 HF_API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
-HF_TOKEN = st.secrets["HF_TOKEN"] 
+#HF_TOKEN = st.secrets["HF_TOKEN"] 
+hf_token = st.secrets["HUGGINGFACE_TOKEN"]["token"]
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_token
 HEADERS  = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
 
 # Tune these so we stay within the public queue limits
