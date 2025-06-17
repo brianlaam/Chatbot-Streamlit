@@ -8,7 +8,6 @@ import streamlit as st
 # 1. Hugging Face Inference-API helper
 # -------------------------------------------------------------------
 HF_API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
-# HF_TOKEN   = os.getenv("HF_TOKEN")          # must be set in Streamlit Secrets
 HF_TOKEN = st.secrets["HUGGINGFACE_API_TOKEN"]
 os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
 HEADERS    = {"Authorization": f"Bearer {HF_TOKEN}"}
@@ -17,7 +16,7 @@ def hf_generate(prompt: str,
                 max_new_tokens: int = 512,
                 temperature: float = 0.7) -> str:
     """
-    Send one prompt to the Mistral endpoint and return only the newly
+    Send one prompt to the endpoint and return only the newly
     generated text (i.e. without the original prompt).
     """
     payload = {
@@ -45,7 +44,7 @@ def hf_generate(prompt: str,
 
 
 # -------------------------------------------------------------------
-# 2. Very small template replicating Mistral chat format
+# 2. Very small template replicating chat format
 # -------------------------------------------------------------------
 def build_prompt(messages: list[dict]) -> str:
     """
@@ -72,7 +71,7 @@ def llm_chat(messages, **gen_kw):
 # 3. Streamlit UI
 # -------------------------------------------------------------------
 st.set_page_config(page_title="Customer-Problem Assistant", page_icon="💬")
-st.title("💬  Internal AI Troubleshooting Assistant")
+st.title("JE AI Assistant")
 
 if not HF_TOKEN:
     st.error("HF_TOKEN is not set.  Add it under *Settings → Secrets* and reload.")
