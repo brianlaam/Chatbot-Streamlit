@@ -1,97 +1,145 @@
+import os
+import json
+import time
+import requests
 import streamlit as st
-from transformers import pipeline
-from huggingface_hub import InferenceClient
 
-# Access HuggingFace API token from Streamlit secrets
-hf_token = st.secrets["HUGGINGFACE_API_TOKEN"]
+# -------------------------------------------------------------------
+# 1. Hugging Face Inference-API helper
+# -------------------------------------------------------------------
+HF_API_URL = "https://huggingface.co/api/models/mistralai/Mistral-7B-Instruct-v0.2"
+# HF_TOKEN   = os.getenv("HF_TOKEN")          # must be set in Streamlit Secrets
+HF_TOKEN = st.secrets["HUGGINGFACE_API_TOKEN"]
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
 
-# Initialize HuggingFace Inference Client
-client = InferenceClient(token=hf_token)
 
-# Streamlit app layout
-st.title("Customer Problem Solver Chatbot")
-st.write("Describe the problem faced by your customer, and I'll help identify reasons and solutions.")
+HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
 
-# Initialize session state to store conversation
-if "step" not in st.session_state:
-    st.session_state.step = 1
-    st.session_state.problem = ""
-    st.session_state.questions = []
-    st.session_state.answers = []
-
-# Step 1: User inputs the customer problem
-if st.session_state.step == 1:
-    with st.form("problem_form"):
-        problem = st.text_area("Enter the customer's problem:", height=100)
-        submitted = st.form_submit_button("Submit Problem")
-        if submitted and problem:
-            st.session_state.problem = problem
-
-            # Generate 5W1H questions using LLM
-            prompt = f"""
-            A customer reported the following problem: "{problem}"
-            Generate 5W1H (Who, What, When, Where, Why, How) questions to gather more details about this problem. Provide the questions as a bulleted list.
-            """
-            try:
-                response = client.text_generation(
-                    prompt,
-                    model="facebook/blenderbot-400M-distill",
-                    max_length=200,
-                    temperature=0.7
-                )
-                questions = response.strip().split("\n")
-                st.session_state.questions = [q for q in questions if q.startswith("- ")]
-                st.session_state.step = 2
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error generating questions: {e}")
-
-# Step 2: Display questions and collect answers
-if st.session_state.step == 2:
-    st.write("Please answer the following questions to provide more details:")
-    with st.form("answers_form"):
-        answers = []
-        for i, question in enumerate(st.session_state.questions):
-            answer = st.text_input(f"{question}", key=f"q{i}")
-            answers.append(answer)
-        submitted = st.form_submit_button("Submit Answers")
-        if submitted and all(answers):
-            st.session_state.answers = answers
-            st.session_state.step = 3
-            st.rerun()
-
-# Step 3: Generate reasons and solutions
-if st.session_state.step == 3:
-    st.write("### Analysis of the Problem")
-    st.write(f"**Customer Problem**: {st.session_state.problem}")
-    st.write("**Provided Details**:")
-    for q, a in zip(st.session_state.questions, st.session_state.answers):
-        st.write(f"{q}: {a}")
-
-    # Generate reasons and solutions using LLM
-    details = "\n".join([f"{q}: {a}" for q, a in zip(st.session_state.questions, st.session_state.answers)])
-    prompt = f"""
-    A customer reported the following problem: "{st.session_state.problem}"
-    Additional details provided:
-    {details}
-
-    Analyze the problem and provide:
-    - A bulleted list of possible reasons for the problem.
-    - A bulleted list of suggested solutions to address the problem.
+def hf_generate(prompt: str,
+                max_new_tokens: int = 512,
+                temperature: float = 0.7) -> str:
     """
-    try:
-        response = client.text_generation(
-            prompt,
-            model="facebook/blenderbot-400M-distill",
-            max_length=400,
-            temperature=0.7
-        )
-        st.write("### Possible Reasons and Suggested Solutions")
-        st.markdown(response.strip())
-    except Exception as e:
-        st.error(f"Error generating reasons: {e}")
+    Send one prompt to the Mistral endpoint and return only the newly
+    generated text (i.e. without the original prompt).
+    """
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": max_new_tokens,
+            "temperature":   temperature,
+            "do_sample":     True,
+            "top_p":         0.95,
+            "repetition_penalty": 1.1,
+        }
+    }
 
-    if st.button("Start Over"):
-        st.session_state.step = 1
-        st.session_state.clear()
-        st.rerun()
+    r = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=180)
+    if r.status_code == 503:          # model is loading
+        with st.spinner("Model is loading on the HuggingFace server…"):
+            time.sleep(10)
+            r = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=180)
+    r.raise_for_status()
+
+    data = r.json()
+    # HF returns a list with 1 dict → {"generated_text": "..."}
+    full_text = data[0]["generated_text"]
+    return full_text[len(prompt):].lstrip()   # strip the prompt part
+
+
+# -------------------------------------------------------------------
+# 2. Very small template replicating Mistral chat format
+# -------------------------------------------------------------------
+def build_prompt(messages: list[dict]) -> str:
+    """
+    Turn messages = [{"role": "...", "content": "..."}] into one prompt string
+    that follows the <s>[INST] ... [/INST] format Mistral-Instruct expects.
+    """
+    prompt = ""
+    for m in messages:
+        role, content = m["role"], m["content"].strip()
+        if role in ("system", "user"):
+            prompt += f"<s>[INST] {content} [/INST]"
+        elif role == "assistant":
+            prompt += f" {content} "
+    # Last assistant turn is what we want the model to generate now:
+    return prompt + " "
+
+def llm_chat(messages, **gen_kw):
+    prompt = build_prompt(messages)
+    reply  = hf_generate(prompt, **gen_kw)
+    return reply
+
+
+# -------------------------------------------------------------------
+# 3. Streamlit UI
+# -------------------------------------------------------------------
+st.set_page_config(page_title="Customer-Problem Assistant", page_icon="💬")
+st.title("💬  Internal AI Troubleshooting Assistant")
+
+if not HF_TOKEN:
+    st.error("HF_TOKEN is not set.  Add it under *Settings → Secrets* and reload.")
+    st.stop()
+
+# -------- Session state -------------------------------------------------
+if "stage" not in st.session_state:
+    st.session_state.stage    = "need_problem"    # → need_clarify → done
+    st.session_state.chatlog  = [
+        {"role": "system",
+         "content":
+         "You are an internal support assistant for our company. "
+         "Follow subsequent instructions carefully."}
+    ]
+
+# -------- Stage 1 : get initial problem --------------------------------
+if st.session_state.stage == "need_problem":
+    problem = st.text_area(
+        "Describe the customer's problem:",
+        placeholder="e.g. Mobile app crashes when user tries to upload a file…"
+    )
+    if st.button("Submit problem", disabled=not problem.strip()):
+        st.session_state.chatlog.append({"role": "user", "content": problem.strip()})
+        # Tell the model what we want next:
+        st.session_state.chatlog.append({
+            "role": "system",
+            "content":
+            "Ask the user 4-8 concise clarifying questions using the 5W1H method "
+            "(Who, What, When, Where, Why, How). Number the questions."
+        })
+        assistant = llm_chat(st.session_state.chatlog, max_new_tokens=256)
+        st.session_state.chatlog.append({"role": "assistant", "content": assistant})
+        st.session_state.stage = "need_clarify"
+        st.experimental_rerun()
+
+# -------- Stage 2 : display 5W1H questions, collect answers ------------
+elif st.session_state.stage == "need_clarify":
+    st.subheader("Assistant questions")
+    st.markdown(st.session_state.chatlog[-1]["content"])
+    answers = st.text_area("Your answers:")
+    if st.button("Submit answers", disabled=not answers.strip()):
+        st.session_state.chatlog.append({"role": "user", "content": answers.strip()})
+        st.session_state.chatlog.append({
+            "role": "system",
+            "content":
+            "Analyse the conversation so far.\n"
+            "1. List the most plausible root causes of the user's problem (bulleted).\n"
+            "2. For each cause, suggest practical solutions or next steps.\n"
+            "3. Keep the tone professional and concise."
+        })
+        assistant = llm_chat(st.session_state.chatlog, max_new_tokens=512)
+        st.session_state.chatlog.append({"role": "assistant", "content": assistant})
+        st.session_state.stage = "done"
+        st.experimental_rerun()
+
+# -------- Stage 3 : show diagnosis -------------------------------------
+elif st.session_state.stage == "done":
+    st.success("Possible causes and solutions")
+    st.markdown(st.session_state.chatlog[-1]["content"])
+    if st.button("Start new analysis"):
+        for k in ("stage", "chatlog"):
+            st.session_state.pop(k, None)
+        st.experimental_rerun()
+
+# -------- Optional: expandable debug log -------------------------------
+with st.expander("🔎 Debug conversation log"):
+    for m in st.session_state.chatlog:
+        st.write(f"**{m['role'].upper()}**: {m['content']}")
