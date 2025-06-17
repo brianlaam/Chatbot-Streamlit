@@ -1,112 +1,142 @@
-import os, torch, streamlit as st
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
+import json
+import time
+import requests
+import streamlit as st
 
-MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.2"
+# -------------------------------------------------------------------
+# 1. Hugging Face Inference-API helper
+# -------------------------------------------------------------------
+HF_API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
+HF_TOKEN   = os.getenv("HF_TOKEN")          # must be set in Streamlit Secrets
 
-# ---------- 1. Load model once & cache ----------
-@st.cache_resource(show_spinner="Loading Mistral-7B …")
-def load_model():
-    dtype = torch.float16              # ← fp16 on most GPUs
-    # For CPU or low-VRAM GPU you can do:
-    #   from transformers import BitsAndBytesConfig
-    #   bnb_cfg = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
-    #   model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, quantization_config=bnb_cfg, device_map="auto")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        device_map="auto",
-        torch_dtype=dtype,
-        trust_remote_code=True,
-    )
-    return tokenizer, model
+HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
 
-tokenizer, model = load_model()
+def hf_generate(prompt: str,
+                max_new_tokens: int = 512,
+                temperature: float = 0.7) -> str:
+    """
+    Send one prompt to the Mistral endpoint and return only the newly
+    generated text (i.e. without the original prompt).
+    """
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": max_new_tokens,
+            "temperature":   temperature,
+            "do_sample":     True,
+            "top_p":         0.95,
+            "repetition_penalty": 1.1,
+        }
+    }
 
-# ---------- 2. Helper to call the LLM ----------
-def chat_complete(msgs, max_new=512, temperature=0.7):
-    """msgs = list[dict(role,content)]  -> assistant reply str"""
-    input_ids = tokenizer.apply_chat_template(
-        msgs, return_tensors="pt", add_generation_prompt=True
-    ).to(model.device)
+    r = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=180)
+    if r.status_code == 503:          # model is loading
+        with st.spinner("Model is loading on the HuggingFace server…"):
+            time.sleep(10)
+            r = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=180)
+    r.raise_for_status()
 
-    out = model.generate(
-        input_ids,
-        max_new_tokens=max_new,
-        do_sample=True,
-        temperature=temperature,
-        top_p=0.95,
-        pad_token_id=tokenizer.eos_token_id,
-    )
-    full = tokenizer.decode(out[0], skip_special_tokens=True)
-    # The assistant reply is everything after the last <assistant> tag:
-    return full.split("<assistant>")[-1].strip()
+    data = r.json()
+    # HF returns a list with 1 dict → {"generated_text": "..."}
+    full_text = data[0]["generated_text"]
+    return full_text[len(prompt):].lstrip()   # strip the prompt part
 
-# ---------- 3. Streamlit UI ----------
+
+# -------------------------------------------------------------------
+# 2. Very small template replicating Mistral chat format
+# -------------------------------------------------------------------
+def build_prompt(messages: list[dict]) -> str:
+    """
+    Turn messages = [{"role": "...", "content": "..."}] into one prompt string
+    that follows the <s>[INST] ... [/INST] format Mistral-Instruct expects.
+    """
+    prompt = ""
+    for m in messages:
+        role, content = m["role"], m["content"].strip()
+        if role in ("system", "user"):
+            prompt += f"<s>[INST] {content} [/INST]"
+        elif role == "assistant":
+            prompt += f" {content} "
+    # Last assistant turn is what we want the model to generate now:
+    return prompt + " "
+
+def llm_chat(messages, **gen_kw):
+    prompt = build_prompt(messages)
+    reply  = hf_generate(prompt, **gen_kw)
+    return reply
+
+
+# -------------------------------------------------------------------
+# 3. Streamlit UI
+# -------------------------------------------------------------------
 st.set_page_config(page_title="Customer-Problem Assistant", page_icon="💬")
 st.title("💬  Internal AI Troubleshooting Assistant")
 
-# Session memory ----------------------------------------------------------
+if not HF_TOKEN:
+    st.error("HF_TOKEN is not set.  Add it under *Settings → Secrets* and reload.")
+    st.stop()
+
+# -------- Session state -------------------------------------------------
 if "stage" not in st.session_state:
-    # stages: "need_problem" → "need_clarify" → "done"
-    st.session_state.stage      = "need_problem"
-    st.session_state.messages   = [
-        {"role":"system",
-         "content":"You are an internal support assistant. You follow the instructions below."}
+    st.session_state.stage    = "need_problem"    # → need_clarify → done
+    st.session_state.chatlog  = [
+        {"role": "system",
+         "content":
+         "You are an internal support assistant for our company. "
+         "Follow subsequent instructions carefully."}
     ]
 
-# ----------- Stage 1 : initial problem -----------------------------------
+# -------- Stage 1 : get initial problem --------------------------------
 if st.session_state.stage == "need_problem":
-    problem = st.text_area("Describe the customer's problem",
-                           placeholder="e.g. Our mobile app crashes whenever …")
+    problem = st.text_area(
+        "Describe the customer's problem:",
+        placeholder="e.g. Mobile app crashes when user tries to upload a file…"
+    )
     if st.button("Submit problem", disabled=not problem.strip()):
-        st.session_state.messages.append({"role":"user", "content": problem.strip()})
-        # Add a system instruction telling the LLM WHAT we want next:
-        st.session_state.messages.append({
-            "role":"system",
-            "content":(
-                "Ask the user clarifying questions using the 5W1H method "
-                "(Who, What, When, Where, Why, How). "
-                "Return 4-8 concise, numbered questions."
-            )
+        st.session_state.chatlog.append({"role": "user", "content": problem.strip()})
+        # Tell the model what we want next:
+        st.session_state.chatlog.append({
+            "role": "system",
+            "content":
+            "Ask the user 4-8 concise clarifying questions using the 5W1H method "
+            "(Who, What, When, Where, Why, How). Number the questions."
         })
-        assistant = chat_complete(st.session_state.messages, max_new=256)
-        st.session_state.messages.append({"role":"assistant", "content": assistant})
+        assistant = llm_chat(st.session_state.chatlog, max_new_tokens=256)
+        st.session_state.chatlog.append({"role": "assistant", "content": assistant})
         st.session_state.stage = "need_clarify"
-        st.experimental_rerun()    # jump to next stage immediately
+        st.experimental_rerun()
 
-# ----------- Stage 2 : user answers 5W1H ---------------------------------
+# -------- Stage 2 : display 5W1H questions, collect answers ------------
 elif st.session_state.stage == "need_clarify":
     st.subheader("Assistant questions")
-    st.markdown(st.session_state.messages[-1]["content"])
-    clarifications = st.text_area("Your answers",
-                                  placeholder="Answer each question here …")
-    if st.button("Submit answers", disabled=not clarifications.strip()):
-        st.session_state.messages.append({"role":"user", "content": clarifications.strip()})
-        # Next instruction: find causes + solutions
-        st.session_state.messages.append({
-            "role":"system",
-            "content":(
-                "Analyse the entire conversation.\n"
-                "1. List the most plausible root causes (bulleted).\n"
-                "2. For each cause, suggest practical solutions or next steps.\n"
-                "3. Keep the tone professional and concise."
-            )
+    st.markdown(st.session_state.chatlog[-1]["content"])
+    answers = st.text_area("Your answers:")
+    if st.button("Submit answers", disabled=not answers.strip()):
+        st.session_state.chatlog.append({"role": "user", "content": answers.strip()})
+        st.session_state.chatlog.append({
+            "role": "system",
+            "content":
+            "Analyse the conversation so far.\n"
+            "1. List the most plausible root causes of the user's problem (bulleted).\n"
+            "2. For each cause, suggest practical solutions or next steps.\n"
+            "3. Keep the tone professional and concise."
         })
-        assistant = chat_complete(st.session_state.messages, max_new=512)
-        st.session_state.messages.append({"role":"assistant", "content": assistant})
+        assistant = llm_chat(st.session_state.chatlog, max_new_tokens=512)
+        st.session_state.chatlog.append({"role": "assistant", "content": assistant})
         st.session_state.stage = "done"
         st.experimental_rerun()
 
-# ----------- Stage 3 : show diagnostic -----------------------------------
+# -------- Stage 3 : show diagnosis -------------------------------------
 elif st.session_state.stage == "done":
-    st.success("Here are possible causes and solutions:")
-    st.markdown(st.session_state.messages[-1]["content"])
-
+    st.success("Possible causes and solutions")
+    st.markdown(st.session_state.chatlog[-1]["content"])
     if st.button("Start new analysis"):
-        for k in ("stage", "messages"): st.session_state.pop(k, None)
+        for k in ("stage", "chatlog"):
+            st.session_state.pop(k, None)
         st.experimental_rerun()
 
-# ---------- (Optional) conversation log for admins -----------------------
-with st.expander("🗒  Internal debug log", expanded=False):
-    for m in st.session_state.messages:
-        st.write(f"{m['role'].upper()}: {m['content']}")
+# -------- Optional: expandable debug log -------------------------------
+with st.expander("🔎 Debug conversation log"):
+    for m in st.session_state.chatlog:
+        st.write(f"**{m['role'].upper()}**: {m['content']}")
