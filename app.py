@@ -11,9 +11,7 @@ HF_API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-I
 # HF_TOKEN   = os.getenv("HF_TOKEN")          # must be set in Streamlit Secrets
 HF_TOKEN = st.secrets["HUGGINGFACE_API_TOKEN"]
 os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
-
-
-HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
+HEADERS    = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 def hf_generate(prompt: str,
                 max_new_tokens: int = 512,
