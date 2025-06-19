@@ -68,8 +68,7 @@ def llm_chat(messages, **gen_kw):
 # ────────────────────────────────────────────────────────────────────
 # 3. Streamlit UI  – ChatGPT-like look & feel
 # ────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Customer-Problem Assistant", page_icon="💬")
-st.title("JE AI Assistant")
+st.set_page_config(page_title="JE AI Assistant", page_icon="💬")
 
 if not HF_TOKEN:
     st.error("HF_TOKEN is not set.  Add it under *Settings → Secrets* and reload.")
