@@ -72,7 +72,7 @@ def llm_chat(messages, **gen_kw):
 # 3. Streamlit UI  – ChatGPT-like look & feel
 # ────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Customer-Problem Assistant",
+    page_title="JE AI Assistant",
     page_icon="💬",
     layout="centered",
 )
@@ -106,7 +106,9 @@ if "stage" not in st.session_state:
     st.session_state.chatlog = [
         {"role": "system",
          "content":
-         "You are an internal support assistant for our company. "
+         "You are an experience quality manager for 30 years."
+         "Please guide me using 4M for the 8D Problem Solving process to address issue"
+         "Please assist me in developing interim containment actions."
          "Follow subsequent instructions carefully."}
     ]
 
@@ -130,7 +132,7 @@ user_prompt = None     # initialise
 # ---- Stage 1 : get the problem --------------------------------------
 if st.session_state.stage == "need_problem":
     user_prompt = st.chat_input(
-        placeholder="Describe the customer's problem and hit Enter …",
+        placeholder="Please describe your problems",
         key="problem_input"
     )
     if user_prompt:
@@ -138,8 +140,9 @@ if st.session_state.stage == "need_problem":
         st.session_state.chatlog.append({
             "role": "system",
             "content":
-            "Ask the user 4-8 concise clarifying questions using the 5W1H method "
-            "(Who, What, When, Where, Why, How). Number the questions."
+            "Use tools like the 5 Whys to identify and verify root causes." 
+            "Propose permanent corrective actions, and guide me through their implementation and validation"
+            "Lastly, suggest ways to modify processes to prevent recurrence."
         })
         with st.chat_message("assistant"):
             with st.spinner("Thinking…"):
