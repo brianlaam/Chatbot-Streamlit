@@ -118,8 +118,10 @@ elif st.session_state.stage == "need_clarify":
         hidden_sys = {
             "role": "system",
             "content": (
-                "Guide the user to apply the 4M approach (Man, Machine, Material, Method) to solve the problem(s)"
-                "Help them develop Interim Containment Actions"
+                "Analyse the conversation so far"
+                "1. List the most plausible root causes of the user's problem in bullet points"
+                "2. Guide the user to apply the 4M approach (Man, Machine, Material, Method) to solve the problem(s) and develop Interim Containment Actions"
+                "3. Keep the tone professional and concise."
             ),
         }
         with st.chat_message("assistant"):
