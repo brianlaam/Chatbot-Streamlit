@@ -76,8 +76,8 @@ if "log" not in st.session_state:
     st.session_state.log = [{
         "role": "system",
         "content": (
-            "You are a professional and polite experienced quality manager working for 30 years"
-        ),
+            "You are an internal support assistant for our company. "
+            "Follow subsequent instructions carefully."}),
     }]
 
 def show_chat():
@@ -95,9 +95,9 @@ if st.session_state.stage == "need_problem":
         hidden_sys = {
             "role": "system",
             "content": (
-                "Guide the user to apply the 4M approach (Man, Machine, Material, Method) inside the 8D problem-solving process"
-                "Help them develop Interim Containment Actions (D3). "
-                "Follow all later instructions. Do not show role markers."
+                "Ask the user 4-8 concise clarifying questions using the 5W1H method "
+                "(Who, What, When, Where, Why, How). Number the questions."
+                "Follow all later instructions and do not show role markers."
             ),
         }
         with st.chat_message("assistant"):
@@ -118,7 +118,8 @@ elif st.session_state.stage == "need_clarify":
         hidden_sys = {
             "role": "system",
             "content": (
-                "Use 5 Whys to find root causes, propose permanent & interim actions, and explain how to validate them"
+                "Guide the user to apply the 4M approach (Man, Machine, Material, Method) to solve the problem(s)"
+                "Help them develop Interim Containment Actions"
             ),
         }
         with st.chat_message("assistant"):
