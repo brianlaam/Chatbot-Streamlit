@@ -4,9 +4,9 @@ import time
 import requests
 import streamlit as st
 
--------------------------------------------------------------------
+# -------------------------------------------------------------------
 # 1. Hugging Face Inference-API helper
--------------------------------------------------------------------
+# -------------------------------------------------------------------
 HF_API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta "
 HF_TOKEN = st.secrets["HUGGINGFACE_API_TOKEN"]
 os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
