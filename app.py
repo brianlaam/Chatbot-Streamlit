@@ -155,7 +155,7 @@ if st.session_state.stage == "need_problem":
 # ---- Stage 2 : clarify ----------------------------------------------
 elif st.session_state.stage == "need_clarify":
     user_prompt = st.chat_input(
-        placeholder="Answer the assistant’s numbered questions here …",
+        placeholder="Please further describe your problems",
         key="clarify_input"
     )
     if user_prompt:
