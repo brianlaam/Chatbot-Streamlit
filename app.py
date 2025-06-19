@@ -155,7 +155,7 @@ if st.session_state.stage == "need_problem":
 # ---- Stage 2 : clarify ----------------------------------------------
 elif st.session_state.stage == "need_clarify":
     user_prompt = st.chat_input(
-        placeholder="Please further describe your problems",
+        placeholder="Please describe your problems",
         key="clarify_input"
     )
     if user_prompt:
@@ -163,10 +163,10 @@ elif st.session_state.stage == "need_clarify":
         st.session_state.chatlog.append({
             "role": "system",
             "content":
-            "Analyse the conversation so far.\n"
-            "1. List the most plausible root causes of the user's problem (bulleted).\n"
-            "2. For each cause, suggest practical solutions or next steps.\n"
-            "3. Keep the tone professional and concise."
+            "Gather user's information and analyse the conversation."
+            "List the most plausible root causes of the user's problem in bullet points."
+            "For each possible cause, suggest some practical solutions or next steps."
+            "Keep the tone professional and concise."
         })
         with st.chat_message("assistant"):
             with st.spinner("Thinking…"):
@@ -177,15 +177,15 @@ elif st.session_state.stage == "need_clarify":
         st.rerun()
 
 # ---- Stage 3 : show diagnosis ---------------------------------------
-elif st.session_state.stage == "done":
-    with st.chat_message("assistant"):
-        st.success("Here is my analysis.  Let me know if I can help further:")
-        st.markdown(st.session_state.chatlog[-1]["content"])
+# elif st.session_state.stage == "done":
+#     with st.chat_message("assistant"):
+#         st.success("Here is my analysis.  Let me know if I can help further:")
+#         st.markdown(st.session_state.chatlog[-1]["content"])
 
-    if st.button("🔄  Start a new analysis"):
-        for k in ("stage", "chatlog"):
-            st.session_state.pop(k, None)
-        st.rerun()
+#     if st.button("🔄  Start a new analysis"):
+#         for k in ("stage", "chatlog"):
+#             st.session_state.pop(k, None)
+#         st.rerun()
 
 # -------- Optional: expandable debug log -------------------------------
 # with st.expander("🔎 Debug conversation log"):
