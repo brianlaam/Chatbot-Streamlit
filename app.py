@@ -103,7 +103,7 @@ if "stage" not in st.session_state:
     st.session_state.chatlog = [
         {"role": "system",
          "content":
-         "You are an internal support assistant for our company. "
+         "You are an experience quality manager assistant for our company. "
          "Follow subsequent instructions carefully."}
     ]
 
@@ -158,9 +158,10 @@ elif st.session_state.stage == "need_clarify":
             "role": "system",
             "content":
             "Analyse the conversation so far.\n"
-            "1. List the most plausible root causes of the user's problem (bulleted).\n"
-            "2. For each cause, suggest practical solutions or next steps.\n"
-            "3. Keep the tone professional and concise."
+            "1. Please guide the user to use the 4M method: Manpower, Method, Material, and Machine, to solve the problem. \n"
+            "2. Please list the 5 most possible root causes of the user's problem (bulleted).\n"
+            "3. For each cause, please suggest corrective actions.\n"
+            "4. Keep the tone professional and concise."
         })
         with st.chat_message("assistant"):
             with st.spinner("Thinking…"):
@@ -171,12 +172,12 @@ elif st.session_state.stage == "need_clarify":
         st.rerun()
 
 # ---- Stage 3 : show diagnosis ---------------------------------------
-elif st.session_state.stage == "done":
-    with st.chat_message("assistant"):
-        st.success("Here is my analysis.  Let me know if I can help further:")
-        st.markdown(st.session_state.chatlog[-1]["content"])
+# elif st.session_state.stage == "done":
+#     with st.chat_message("assistant"):
+#         st.success("Here is my analysis.  Let me know if I can help further:")
+#         st.markdown(st.session_state.chatlog[-1]["content"])
 
-    if st.button("🔄  Start a new analysis"):
-        for k in ("stage", "chatlog"):
-            st.session_state.pop(k, None)
-        st.rerun()
+#     if st.button("🔄  Start a new analysis"):
+#         for k in ("stage", "chatlog"):
+#             st.session_state.pop(k, None)
+#         st.rerun()
