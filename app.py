@@ -127,16 +127,16 @@ elif st.session_state.stage == "need_clarify":
         st.session_state.stage = "done"
         st.rerun()
 
-# -------- Stage 3 : show diagnosis -------------------------------------
-elif st.session_state.stage == "done":
-    st.success("Possible causes and solutions")
-    st.markdown(st.session_state.chatlog[-1]["content"])
-    if st.button("Start new analysis"):
-        for k in ("stage", "chatlog"):
-            st.session_state.pop(k, None)
-        st.rerun()
+# # -------- Stage 3 : show diagnosis -------------------------------------
+# elif st.session_state.stage == "done":
+#     st.success("Possible causes and solutions")
+#     st.markdown(st.session_state.chatlog[-1]["content"])
+#     if st.button("Start new analysis"):
+#         for k in ("stage", "chatlog"):
+#             st.session_state.pop(k, None)
+#         st.rerun()
 
-# -------- Optional: expandable debug log -------------------------------
-with st.expander("🔎 Debug conversation log"):
-    for m in st.session_state.chatlog:
-        st.write(f"**{m['role'].upper()}**: {m['content']}")
+# # -------- Optional: expandable debug log -------------------------------
+# with st.expander("🔎 Debug conversation log"):
+#     for m in st.session_state.chatlog:
+#         st.write(f"**{m['role'].upper()}**: {m['content']}")
