@@ -13,7 +13,7 @@ os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
 HEADERS    = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 def hf_generate(prompt: str,
-                max_new_tokens: int = 512,
+                max_new_tokens: int = 2048,
                 temperature: float = 0.7) -> str:
     """
     Send one prompt to the endpoint and return only the newly
@@ -70,7 +70,7 @@ def llm_chat(messages, **gen_kw):
 # -------------------------------------------------------------------
 # 3. Streamlit UI
 # -------------------------------------------------------------------
-st.set_page_config(page_title="Customer-Problem Assistant", page_icon="💬")
+st.set_page_config(page_title="JE AI Assistant", page_icon="💬")
 st.title("JE AI Assistant")
 
 if not HF_TOKEN:
