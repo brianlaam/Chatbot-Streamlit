@@ -1,135 +1,142 @@
-# ────────────────────────────────────────────
-# 0. Imports & constants
-# ────────────────────────────────────────────
-import os, re, time, requests, streamlit as st
+import os
+import json
+import time
+import requests
+import streamlit as st
 
+# -------------------------------------------------------------------
+# 1. Hugging Face Inference-API helper
+# -------------------------------------------------------------------
 HF_API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
-HF_TOKEN   = st.secrets["HUGGINGFACE_API_TOKEN"]
+HF_TOKEN = st.secrets["HUGGINGFACE_API_TOKEN"]
 os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
-HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
+HEADERS    = {"Authorization": f"Bearer {HF_TOKEN}"}
 
-# ────────────────────────────────────────────
-# 1. HF helper
-# ────────────────────────────────────────────
-def hf_generate(prompt, max_new_tokens=2048, temperature=0.7):
+def hf_generate(prompt: str,
+                max_new_tokens: int = 512,
+                temperature: float = 0.7) -> str:
+    """
+    Send one prompt to the endpoint and return only the newly
+    generated text (i.e. without the original prompt).
+    """
     payload = {
         "inputs": prompt,
         "parameters": {
-            "max_new_tokens":     max_new_tokens,
-            "temperature":        temperature,
-            "do_sample":          True,
-            "top_p":              0.95,
+            "max_new_tokens": max_new_tokens,
+            "temperature":   temperature,
+            "do_sample":     True,
+            "top_p":         0.95,
             "repetition_penalty": 1.1,
-        },
+        }
     }
+
     r = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=180)
-    if r.status_code == 503:
-        with st.spinner("Model loading…"): time.sleep(10)
-        r = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=180)
+    if r.status_code == 503:          # model is loading
+        with st.spinner("Model is loading on the HuggingFace server…"):
+            time.sleep(10)
+            r = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=180)
     r.raise_for_status()
-    full = r.json()[0]["generated_text"]
-    return full[len(prompt):].lstrip()
 
-# ────────────────────────────────────────────
-# 2. Prompt builder  (single system block!)
-# ────────────────────────────────────────────
-def build_prompt(messages):
-    """Combine all system msgs into one, then alternate user/assistant."""
-    system_prefix = ""
-    chat_pairs    = []
+    data = r.json()
+    # HF returns a list with 1 dict → {"generated_text": "..."}
+    full_text = data[0]["generated_text"]
+    return full_text[len(prompt):].lstrip()   # strip the prompt part
+
+
+# -------------------------------------------------------------------
+# 2. Very small template replicating chat format
+# -------------------------------------------------------------------
+def build_prompt(messages: list[dict]) -> str:
+    """
+    Turn messages = [{"role": "...", "content": "..."}] into one prompt string
+    that follows the <s>[INST] ... [/INST] format Mistral-Instruct expects.
+    """
+    prompt = ""
     for m in messages:
-        role, txt = m["role"], m["content"].strip()
-        if role == "system":
-            system_prefix += txt + "\n"
-        elif role == "user":
-            chat_pairs.append((txt, None))          # placeholder for answer
-        else:                                       # assistant
-            if chat_pairs:
-                chat_pairs[-1] = (chat_pairs[-1][0], txt)
-
-    prompt = f"<s>[INST] {system_prefix.strip()}\n" \
-             f"{chat_pairs[-1][0]} [/INST]"         # last user request
-    for user, assistant in chat_pairs[:-1]:
-        prompt += f" {assistant.strip()} </s><s>[INST] {user} [/INST]"
+        role, content = m["role"], m["content"].strip()
+        if role in ("system", "user"):
+            prompt += f"<s>[INST] {content} [/INST]"
+        elif role == "assistant":
+            prompt += f" {content} "
+    # Last assistant turn is what we want the model to generate now:
     return prompt + " "
 
-def llm_chat(msgs, **kw): return hf_generate(build_prompt(msgs), **kw)
+def llm_chat(messages, **gen_kw):
+    prompt = build_prompt(messages)
+    reply  = hf_generate(prompt, **gen_kw)
+    return reply
 
-# ────────────────────────────────────────────
-# 3. Strip stray tags the model might emit
-# ────────────────────────────────────────────
-TAG_RE = re.compile(r"\[/?(INST|USER|SYSTEM|ASSISTANT)\]")
-def clean(text): return TAG_RE.sub("", text).strip()
 
-# ────────────────────────────────────────────
-# 4. Streamlit UI
-# ────────────────────────────────────────────
-st.set_page_config(page_title="JE AI Assistant", page_icon="💬")
-st.header("💬 JE AI Assistant")
+# -------------------------------------------------------------------
+# 3. Streamlit UI
+# -------------------------------------------------------------------
+st.set_page_config(page_title="Customer-Problem Assistant", page_icon="💬")
+st.title("JE AI Assistant")
 
 if not HF_TOKEN:
-    st.error("Add HUGGINGFACE_API_TOKEN under Settings → Secrets.")
+    st.error("HF_TOKEN is not set.  Add it under *Settings → Secrets* and reload.")
     st.stop()
 
-if "log" not in st.session_state:
-    st.session_state.stage = "need_problem"
-    st.session_state.log = [{
-        "role": "system",
-        "content": (
-            "You are an internal support assistant for our company. "
-            "Follow subsequent instructions carefully."),
-    }]
+# -------- Session state -------------------------------------------------
+if "stage" not in st.session_state:
+    st.session_state.stage    = "need_problem"    # → need_clarify → done
+    st.session_state.chatlog  = [
+        {"role": "system",
+         "content":
+         "You are an internal support assistant for our company. "
+         "Follow subsequent instructions carefully."}
+    ]
 
-def show_chat():
-    for m in st.session_state.log:
-        if m["role"] == "system": continue
-        with st.chat_message(m["role"]): st.markdown(m["content"])
-show_chat()
-
-# ---------- Stage 1 : get the problem -------------------------------
+# -------- Stage 1 : get initial problem --------------------------------
 if st.session_state.stage == "need_problem":
-    user_in = st.chat_input("Describe the problem …")
-    if user_in:
-        st.session_state.log.append({"role": "user", "content": user_in})
-        # hidden instruction goes ONLY to this call, not into log
-        hidden_sys = {
+    problem = st.text_area(
+        "Describe the customer's problem:",
+        placeholder="e.g. Mobile app crashes when user tries to upload a file…"
+    )
+    if st.button("Submit problem", disabled=not problem.strip()):
+        st.session_state.chatlog.append({"role": "user", "content": problem.strip()})
+        # Tell the model what we want next:
+        st.session_state.chatlog.append({
             "role": "system",
-            "content": (
-                "Ask the user 4-8 concise clarifying questions using the 5W1H method "
-                "(Who, What, When, Where, Why, How). Number the questions."
-                "Follow all later instructions and do not show role markers."
-            ),
-        }
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking…"):
-                reply = clean(
-                    llm_chat(st.session_state.log + [hidden_sys], max_new_tokens=300)
-                )
-                st.markdown(reply)
-        st.session_state.log.append({"role": "assistant", "content": reply})
+            "content":
+            "Ask the user 4-8 concise clarifying questions using the 5W1H method "
+            "(Who, What, When, Where, Why, How). Number the questions."
+        })
+        assistant = llm_chat(st.session_state.chatlog, max_new_tokens=256)
+        st.session_state.chatlog.append({"role": "assistant", "content": assistant})
         st.session_state.stage = "need_clarify"
         st.rerun()
 
-# ---------- Stage 2 : follow-up questions ---------------------------
+# -------- Stage 2 : display 5W1H questions, collect answers ------------
 elif st.session_state.stage == "need_clarify":
-    user_in = st.chat_input("Any more details or questions?")
-    if user_in:
-        st.session_state.log.append({"role": "user", "content": user_in})
-        hidden_sys = {
+    st.subheader("Assistant questions")
+    st.markdown(st.session_state.chatlog[-1]["content"])
+    answers = st.text_area("Your answers:")
+    if st.button("Submit answers", disabled=not answers.strip()):
+        st.session_state.chatlog.append({"role": "user", "content": answers.strip()})
+        st.session_state.chatlog.append({
             "role": "system",
-            "content": (
-                "Analyse the conversation so far"
-                "1. List the most plausible root causes of the user's problem in bullet points"
-                "2. Guide the user to apply the 4M approach (Man, Machine, Material, Method) to solve the problem(s) and develop Interim Containment Actions"
-                "3. Keep the tone professional and concise."
-            ),
-        }
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking…"):
-                reply = clean(
-                    llm_chat(st.session_state.log + [hidden_sys], max_new_tokens=400)
-                )
-                st.markdown(reply)
-        st.session_state.log.append({"role": "assistant", "content": reply})
+            "content":
+            "Analyse the conversation so far.\n"
+            "1. List the most plausible root causes of the user's problem (bulleted).\n"
+            "2. For each cause, suggest practical solutions or next steps.\n"
+            "3. Keep the tone professional and concise."
+        })
+        assistant = llm_chat(st.session_state.chatlog, max_new_tokens=512)
+        st.session_state.chatlog.append({"role": "assistant", "content": assistant})
         st.session_state.stage = "done"
         st.rerun()
+
+# -------- Stage 3 : show diagnosis -------------------------------------
+elif st.session_state.stage == "done":
+    st.success("Possible causes and solutions")
+    st.markdown(st.session_state.chatlog[-1]["content"])
+    if st.button("Start new analysis"):
+        for k in ("stage", "chatlog"):
+            st.session_state.pop(k, None)
+        st.rerun()
+
+# -------- Optional: expandable debug log -------------------------------
+with st.expander("🔎 Debug conversation log"):
+    for m in st.session_state.chatlog:
+        st.write(f"**{m['role'].upper()}**: {m['content']}")
