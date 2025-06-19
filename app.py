@@ -1,3 +1,66 @@
+import os
+import json
+import time
+import requests
+import streamlit as st
+
+-------------------------------------------------------------------
+1. Hugging Face Inference-API helper
+-------------------------------------------------------------------
+HF_API_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta "
+HF_TOKEN = st.secrets["HUGGINGFACE_API_TOKEN"]
+os.environ["HUGGINGFACEHUB_API_TOKEN"] = HF_TOKEN
+HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
+def hf_generate(prompt: str,
+max_new_tokens: int = 512,
+temperature: float = 0.7) -> str:
+"""
+Send one prompt to the endpoint and return only the newly
+generated text (i.e. without the original prompt).
+"""
+payload = {
+"inputs": prompt,
+"parameters": {
+"max_new_tokens": max_new_tokens,
+"temperature": temperature,
+"do_sample": True,
+"top_p": 0.95,
+"repetition_penalty": 1.1,
+}
+}
+r = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=180)
+if r.status_code == 503: # model is loading
+with st.spinner("Model is loading on the HuggingFace server…"):
+time.sleep(10)
+r = requests.post(HF_API_URL, headers=HEADERS, json=payload, timeout=180)
+r.raise_for_status()
+data = r.json()
+# HF returns a list with 1 dict → {"generated_text": "..."}
+full_text = data[0]["generated_text"]
+return full_text[len(prompt):].lstrip() # strip the prompt part
+
+-------------------------------------------------------------------
+2. Very small template replicating chat format
+-------------------------------------------------------------------
+def build_prompt(messages: list[dict]) -> str:
+"""
+Turn messages = [{"role": "...", "content": "..."}] into one prompt string
+that follows the <s>[INST] ... [/INST] format Mistral-Instruct expects.
+"""
+prompt = ""
+for m in messages:
+role, content = m["role"], m["content"].strip()
+if role in ("system", "user"):
+prompt += f"<s>[INST] {content} [/INST]"
+elif role == "assistant":
+prompt += f" {content} "
+# Last assistant turn is what we want the model to generate now:
+return prompt + " "
+def llm_chat(messages, **gen_kw):
+prompt = build_prompt(messages)
+reply = hf_generate(prompt, **gen_kw)
+return reply
+
 # ────────────────────────────────────────────────────────────────────
 # 3. Streamlit UI  – ChatGPT-like look & feel
 # ────────────────────────────────────────────────────────────────────
