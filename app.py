@@ -11,7 +11,7 @@ HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
 # ────────────────────────────────────────────
 # 1. HF helper
 # ────────────────────────────────────────────
-def hf_generate(prompt, max_new_tokens=512, temperature=0.7):
+def hf_generate(prompt, max_new_tokens=2048, temperature=0.7):
     payload = {
         "inputs": prompt,
         "parameters": {
