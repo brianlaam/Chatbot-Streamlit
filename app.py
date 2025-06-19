@@ -76,7 +76,7 @@ if "log" not in st.session_state:
     st.session_state.log = [{
         "role": "system",
         "content": (
-            "You are an experienced quality manager (30 yrs) in Johnson Electric."
+            "You are a professional and polite experienced quality manager working for 30 years"
         ),
     }]
 
