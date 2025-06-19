@@ -77,7 +77,7 @@ if "log" not in st.session_state:
         "role": "system",
         "content": (
             "You are an internal support assistant for our company. "
-            "Follow subsequent instructions carefully."}),
+            "Follow subsequent instructions carefully."),
     }]
 
 def show_chat():
