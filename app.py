@@ -144,7 +144,7 @@ if st.session_state.stage == "need_problem":
                 st.markdown(assistant)
         st.session_state.chatlog.append({"role": "assistant", "content": assistant})
         st.session_state.stage = "need_clarify"
-        st.experimental_rerun()
+        st.rerun()
 
 # ---- Stage 2 : clarify ----------------------------------------------
 elif st.session_state.stage == "need_clarify":
@@ -168,7 +168,7 @@ elif st.session_state.stage == "need_clarify":
                 st.markdown(assistant)
         st.session_state.chatlog.append({"role": "assistant", "content": assistant})
         st.session_state.stage = "done"
-        st.experimental_rerun()
+        st.rerun()
 
 # ---- Stage 3 : show diagnosis ---------------------------------------
 elif st.session_state.stage == "done":
@@ -179,4 +179,4 @@ elif st.session_state.stage == "done":
     if st.button("🔄  Start a new analysis"):
         for k in ("stage", "chatlog"):
             st.session_state.pop(k, None)
-        st.experimental_rerun()
+        st.rerun()
