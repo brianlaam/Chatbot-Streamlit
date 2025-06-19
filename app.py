@@ -42,9 +42,9 @@ def hf_generate(prompt: str,
     full_text = data[0]["generated_text"]
     return full_text[len(prompt):].lstrip()   # strip the prompt part
 
--------------------------------------------------------------------
+# -------------------------------------------------------------------
 # 2. Very small template replicating chat format
--------------------------------------------------------------------
+# -------------------------------------------------------------------
 def build_prompt(messages: list[dict]) -> str:
     """
     Turn messages = [{"role": "...", "content": "..."}] into one prompt string
